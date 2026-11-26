@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  compose:
+    # prova que a plataforma sobe do zero com um comando e funciona de ponta a ponta
+    runs-on: ubuntu-latest
+    needs: testes
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: Teste de ponta a ponta
+        run: |
+          set -o pipefail
+          python3 scripts/smoke.py | tee smoke.txt
+      - name: O trace atravessa gateway, fila, worker, inferencia e vetorial
+        run: |
+          trace=$(grep -o 'trace_id=[0-9a-f]*' smoke.txt | cut -d= -f2)
+          sleep 5
+          curl -fsS "http://localhost:16686/api/traces/$trace" > trace.json
+          python3 - <<'EOF'
+          import json
+          dados = json.load(open("trace.json"))["data"][0]
+          servicos = {p["serviceName"] for p in dados["processes"].values()}
+          print(sorted(servicos))
+          assert {"gateway", "worker", "inferencia", "vetorial"} <= servicos
+          EOF
+      - if: always()
+        run: docker compose logs --no-color
