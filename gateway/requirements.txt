@@ -1,5 +1,2 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-requests==2.32.3
-pyjwt==2.9.0
-pydantic==2.9.2
+-r ../comum/requirements.txt
+pyjwt==2.15.1
