@@ -1,0 +1,143 @@
+# Blueprint do Render (free tier): no painel, New > Blueprint > este repositorio.
+#
+# Limites do plano gratuito que moldam este arquivo:
+#  - nao existe "background worker": o worker e um web service com consumidor em thread
+#  - web service gratuito nao RECEBE trafego da rede privada: os servicos se falam
+#    pela URL publica HTTPS, protegidos pelo TOKEN_INTERNO
+#  - o Key Value gratuito nao persiste em disco
+
+services:
+  - type: keyvalue
+    name: plataforma-redis
+    plan: free
+    region: oregon
+    maxmemoryPolicy: noeviction
+    ipAllowList: []   # acesso somente pela rede interna do Render
+
+  - type: web
+    name: plataforma-ia-vetorial
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./vetorial/Dockerfile
+    dockerContext: .
+    healthCheckPath: /saude
+    envVars:
+      - key: AMBIENTE
+        value: producao
+      - key: TOKEN_INTERNO
+        generateValue: true   # gerado aqui e herdado pelos outros servicos
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: plataforma-redis, property: connectionString }
+      - key: RETENCAO_HORAS
+        value: "24"
+      - key: OTEL_CONSOLE
+        value: "1"
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+
+  - type: web
+    name: plataforma-ia-inferencia
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./inferencia/Dockerfile
+    dockerContext: .
+    healthCheckPath: /saude
+    envVars:
+      - key: AMBIENTE
+        value: producao
+      - key: TOKEN_INTERNO
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: TOKEN_INTERNO }
+      - key: URL_VETORIAL
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      # os tempos-limite cobrem o despertar de um servico hibernado (cerca de 1 min)
+      - key: HTTP_TIMEOUT
+        value: "30"
+      - key: HTTP_TENTATIVAS
+        value: "3"
+      - key: LLM_API_KEY
+        sync: false   # deixe vazio para o modo simulado
+      - key: LLM_TIMEOUT
+        value: "15"
+      - key: OTEL_CONSOLE
+        value: "1"
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+
+  - type: web
+    name: plataforma-ia-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: .
+    healthCheckPath: /saude
+    envVars:
+      - key: AMBIENTE
+        value: producao
+      - key: TOKEN_INTERNO
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: TOKEN_INTERNO }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: plataforma-redis, property: connectionString }
+      - key: URL_INFERENCIA
+        fromService: { type: web, name: plataforma-ia-inferencia, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      - key: URL_VETORIAL
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      - key: RETENCAO_HORAS
+        value: "24"
+      - key: HTTP_TIMEOUT
+        value: "30"
+      - key: FILA_MAX_TENTATIVAS
+        value: "8"
+      - key: OTEL_CONSOLE
+        value: "1"
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+
+  - type: web
+    name: plataforma-ia-gateway
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: .
+    healthCheckPath: /saude
+    envVars:
+      - key: AMBIENTE
+        value: producao
+      - key: TOKEN_INTERNO
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: TOKEN_INTERNO }
+      - key: JWT_SEGREDO
+        generateValue: true
+      - key: USUARIOS
+        sync: false   # formato usuario:senha (senha com 12+ caracteres)
+      # o TLS termina no proxy do Render; confia no X-Forwarded-For dele
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: plataforma-redis, property: connectionString }
+      - key: URL_INFERENCIA
+        fromService: { type: web, name: plataforma-ia-inferencia, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      - key: URL_VETORIAL
+        fromService: { type: web, name: plataforma-ia-vetorial, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      - key: URL_WORKER
+        fromService: { type: web, name: plataforma-ia-worker, envVarKey: RENDER_EXTERNAL_HOSTNAME }
+      - key: RETENCAO_HORAS
+        value: "24"
+      - key: HTTP_TIMEOUT
+        value: "30"
+      - key: TIMEOUT_PERGUNTAR
+        value: "90"
+      - key: OTEL_CONSOLE
+        value: "1"
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
