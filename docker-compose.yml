@@ -1,33 +1,115 @@
+# docker compose up --build     -> sobe a plataforma inteira com UM comando
+#   gateway: http://localhost:8000/docs      Jaeger: http://localhost:16686
+#
+# Os valores padrao abaixo servem SOMENTE para uso local (login demo / demo-local).
+# Em producao os servicos se recusam a subir com eles.
+
+x-ambiente: &ambiente
+  TOKEN_INTERNO: ${TOKEN_INTERNO:-dev-token-interno}
+  RETENCAO_HORAS: ${RETENCAO_HORAS:-24}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+  OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+  OTEL_BSP_SCHEDULE_DELAY: "1000"
+  BREAKER_LIMITE_FALHAS: ${BREAKER_LIMITE_FALHAS:-3}
+  BREAKER_ESPERA: ${BREAKER_ESPERA:-20}
+  HTTP_TIMEOUT: ${HTTP_TIMEOUT:-5}
+  HTTP_TENTATIVAS: ${HTTP_TENTATIVAS:-3}
+
+x-saude: &saude
+  interval: 5s
+  timeout: 4s
+  retries: 20
+  start_period: 10s
+
+# Os servicos se referenciam pelo NOME (descoberta de servicos). Apenas o
+# gateway publica porta: os demais so existem na rede interna do compose.
 services:
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    # AOF: fila e vetores sobrevivem a reinicio do container
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [dados-redis:/data]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 5
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports: ["127.0.0.1:16686:16686"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    restart: unless-stopped
+
+  vetorial:
+    build: { context: ., dockerfile: vetorial/Dockerfile }
+    environment:
+      <<: *ambiente
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      <<: *saude
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/saude', timeout=3)"]
+    restart: unless-stopped
 
   inferencia:
-    build: ./inferencia
+    build: { context: ., dockerfile: inferencia/Dockerfile }
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      <<: *ambiente
+      URL_VETORIAL: http://vetorial:8002
+      # chave vazia = LLM em modo simulado (offline)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_URL: ${LLM_API_URL:-https://api.openai.com/v1/chat/completions}
+      LLM_MODELO: ${LLM_MODELO:-gpt-4o-mini}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-8}
+      # demonstracao do disjuntor: o LLM "cai" enquanto este arquivo existir
+      LLM_SIMULAR_FALHA_ARQUIVO: /tmp/llm_falha
     depends_on:
-      redis: {condition: service_healthy}
+      vetorial: { condition: service_healthy }
+    healthcheck:
+      <<: *saude
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/saude', timeout=3)"]
+    restart: unless-stopped
 
+  # Mais consumidores: docker compose up --scale worker=3
   worker:
-    build: ./worker
+    build: { context: ., dockerfile: worker/Dockerfile }
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      <<: *ambiente
+      REDIS_URL: redis://redis:6379/0
+      URL_INFERENCIA: http://inferencia:8001
+      URL_VETORIAL: http://vetorial:8002
     depends_on:
-      redis: {condition: service_healthy}
+      redis: { condition: service_healthy }
+      inferencia: { condition: service_healthy }
+    healthcheck:
+      <<: *saude
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/saude', timeout=3)"]
+    restart: unless-stopped
 
   gateway:
-    build: ./gateway
+    build: { context: ., dockerfile: gateway/Dockerfile }
     ports: ["8000:8000"]
     environment:
-      - URL_INFERENCIA=http://inferencia:8001
-      - JWT_SEGREDO=${JWT_SEGREDO:-troque-este-segredo}
-    depends_on: [inferencia]
+      <<: *ambiente
+      REDIS_URL: redis://redis:6379/0
+      URL_INFERENCIA: http://inferencia:8001
+      URL_VETORIAL: http://vetorial:8002
+      JWT_SEGREDO: ${JWT_SEGREDO:-dev-segredo-jwt-apenas-para-uso-local}
+      USUARIOS: ${USUARIOS:-demo:demo-local}
+      LIMITE_POR_MINUTO: ${LIMITE_POR_MINUTO:-60}
+      TIMEOUT_PERGUNTAR: ${TIMEOUT_PERGUNTAR:-40}
+    depends_on:
+      redis: { condition: service_healthy }
+      inferencia: { condition: service_healthy }
+      worker: { condition: service_healthy }
+    healthcheck:
+      <<: *saude
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/saude', timeout=3)"]
+    restart: unless-stopped
 
-# Observe: os servicos se referenciam pelo NOME (inferencia, redis),
-# nunca por IP fixo. Isso e descoberta de servicos. (Aula 14)
+volumes:
+  dados-redis:

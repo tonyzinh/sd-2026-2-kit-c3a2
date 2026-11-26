@@ -1,0 +1,5 @@
+-r gateway/requirements.txt
+-r inferencia/requirements.txt
+pytest==9.2.0
+httpx==0.29.0
+fakeredis==2.41.0
