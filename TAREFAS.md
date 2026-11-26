@@ -4,33 +4,33 @@ Este e o projeto integrador. Reaproveite o que voce fez em C1.A2 e C2.A2.
 
 ## Nucleo obrigatorio
 
-- [ ] **1. Autenticacao JWT no gateway** - `gateway/app.py`
+- [x] **1. Autenticacao JWT no gateway** - `gateway/app.py`
       Rota de login que emite o token e protecao das demais rotas (401 sem token). (Aula 16)
 
-- [ ] **2. Rate limit no gateway** - `gateway/app.py`
+- [x] **2. Rate limit no gateway** - `gateway/app.py`
       Limitar requisicoes por cliente por minuto. (Aula 8)
 
-- [ ] **3. Dockerfile de cada servico**
+- [x] **3. Dockerfile de cada servico**
       Um Dockerfile por servico. Use `Dockerfile.exemplo` como ponto de partida. (Aula 13)
 
-- [ ] **4. docker-compose completo**
+- [x] **4. docker-compose completo**
       O sistema inteiro deve subir com UM comando. (Aula 14)
 
 - [ ] **5. Deploy em nuvem (free tier)**
       Publicar e informar a URL publica no README. (Aula 13)
 
-- [ ] **6. Resiliencia**
+- [x] **6. Resiliencia**
       Tempo-limite, retentativa com espera progressiva e circuit breaker. (Aula 11)
 
-- [ ] **7. Observabilidade**
+- [x] **7. Observabilidade**
       Rastreamento distribuido cobrindo gateway -> fila -> worker. (Aula 15)
 
 - [ ] **8. HTTPS** no servico publicado. (Aula 16)
 
-- [ ] **9. Secao de conformidade no README**
+- [x] **9. Secao de conformidade no README**
       Quais dados sao tratados, com qual finalidade e por quanto tempo. (LGPD, Aula 16)
 
-- [ ] **10. Relatorio de trade-offs**
+- [x] **10. Relatorio de trade-offs**
       CAP, custo e latencia do seu sistema.
 
 ## Extensoes opcionais
@@ -45,5 +45,5 @@ Este e o projeto integrador. Reaproveite o que voce fez em C1.A2 e C2.A2.
 
 - [ ] Clone em OUTRA maquina e rode o comando unico - funciona?
 - [ ] A URL publica esta no ar?
-- [ ] Toda configuracao esta em variavel de ambiente (nada fixo no codigo)?
-- [ ] Os logs estao livres de dados pessoais?
+- [x] Toda configuracao esta em variavel de ambiente (nada fixo no codigo)?
+- [x] Os logs estao livres de dados pessoais?
