@@ -6,7 +6,9 @@ Plataforma em microsserviços que classifica sentimentos e responde perguntas so
 documentos do próprio usuário (RAG). Conteinerizada, observável e protegida. A IA é
 tratada como caixa-preta: o foco do projeto é a engenharia distribuída.
 
-> **URL pública:** _PENDENTE — preencher após o deploy (ver [deploy/INSTRUCOES.md](deploy/INSTRUCOES.md))._
+> **URL pública:** <https://plataforma-ia-gateway.onrender.com> · documentação interativa em [/docs](https://plataforma-ia-gateway.onrender.com/docs)
+>
+> O plano gratuito hiberna os serviços ociosos: a primeira requisição pode levar alguns minutos ou precisar ser repetida. As credenciais de avaliação não ficam no repositório.
 
 ---
 
