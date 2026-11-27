@@ -28,6 +28,31 @@ flowchart LR
     V --> S[("Redis<br/>vetores")]
 ```
 
+# Plataforma de IA em microsserviços
+
+Plataforma de microsserviços para análise de sentimento, embeddings e RAG
+(busca + LLM), com API Gateway, fila de mensageria, armazenamento vetorial próprio,
+resiliência, rastreamento distribuído, segurança e tratamento de dados conforme a LGPD.
+
+Repositório: <https://github.com/tonyzinh/sd-2026-2-kit-c3a2>
+
+## Sumário
+
+1. [Arquitetura](#1-arquitetura)
+2. [Como executar do zero](#2-como-executar-do-zero)
+3. [Resiliência](#3-resiliência)
+4. [Observabilidade](#4-observabilidade)
+5. [Segurança](#5-segurança)
+6. [LGPD: dados tratados, finalidade e retenção](#6-lgpd-dados-tratados-finalidade-e-retenção)
+7. [Relatório de trade-offs](#7-relatório-de-trade-offs)
+8. [Estrutura do repositório](#8-estrutura-do-repositório)
+
+---
+
+## 1. Arquitetura
+
+### Serviços
+
 | Serviço | Responsabilidade | Porta (rede interna) |
 |---|---|---|
 | `gateway` | Única porta de entrada: JWT, rate limit, validação, roteamento e publicação na fila. Não tem lógica de IA. | 8000 (publicada) |
@@ -54,7 +79,11 @@ chave separados; só o `vetorial` lê e escreve as chaves `vet:*`.
 
 ## 2. Como executar do zero
 
-Pré-requisito: Docker com Compose.
+### Pré-requisito
+
+Docker com Compose.
+
+### Subindo a plataforma
 
 ```bash
 git clone https://github.com/tonyzinh/sd-2026-2-kit-c3a2.git
@@ -81,11 +110,13 @@ python scripts/smoke.py
 | GET | `/saude` | não | Saúde do gateway |
 | POST | `/login` | não | Emite o token (`usuario`, `senha`) |
 | POST | `/predict` | sim | Sentimento de um texto (`texto`) |
-| POST | `/documentos` | sim | Enfileira até 20 textos (`textos`) → `202` + lote |
+| POST | `/documentos` | sim | Enfileira até 20 textos (`textos`) e responde `202` com o lote |
 | GET | `/documentos/lotes/{lote}` | sim | Status do lote (só o dono vê) |
 | POST | `/perguntar` | sim | RAG sobre os documentos do usuário (`pergunta`, `top_k`) |
 | DELETE | `/meus-dados` | sim | Elimina os dados do usuário (LGPD) |
 | GET | `/status` | sim | Disjuntores do gateway e métricas da fila |
+
+### Exemplos de uso
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8000/login -H "Content-Type: application/json" \
@@ -125,13 +156,13 @@ O padrão aplicado nas chamadas entre serviços é
 |---|---|---|
 | Tempo-limite | Em toda chamada HTTP e conexão Redis | HTTP 5 s / 30 s; Redis 3 s para conectar |
 | Retentativa | Backoff exponencial com *full jitter*, só para timeout, erro de conexão, 429 e 5xx | 3 tentativas |
-| Circuit breaker | Abre após 3 falhas (já esgotadas as retentativas), recusa na hora e depois deixa passar **uma** sonda. Um 4xx não conta. | reabre após 20 s |
+| Circuit breaker | Abre após 3 falhas (já esgotadas as retentativas), recusa na hora e depois deixa passar **uma** sonda. Um 4xx não conta. | Reabre após 20 s |
 
-Decisões:
+### Decisões
 
 - **Um disjuntor por rota de dependência.** O RAG fora do ar não bloqueia o `/predict`.
 - **Sem retentativa no gateway para `/perguntar`.** A inferência já repete as chamadas
-  dela; repetir nas duas camadas multiplicaria a carga (3 × 3) durante uma falha.
+  dela; repetir nas duas camadas multiplicaria a carga (3 x 3) durante uma falha.
 - **Degradação graciosa:** sem o LLM, `/perguntar` devolve os trechos recuperados com
   `"degradado": true`.
 - **Worker:** circuito aberto adia o lote sem gastar tentativa; erro transitório
@@ -207,15 +238,18 @@ gateway: POST /documentos
   com segredo ausente, curto ou de desenvolvimento, nem com senha menor que 12 caracteres.
 - **Containers** rodam com usuário sem privilégios.
 
-**Limitações conhecidas:** os usuários são fixos em variável de ambiente, sem cadastro
-nem hash de senha; o token não pode ser revogado antes de expirar (remover o usuário
-de `USUARIOS` bloqueia o acesso após o reinício); o token interno é um segredo único
-compartilhado, e não mTLS; o rate limit de janela fixa permite rajada na virada do
-minuto; o teto global de login permite que um atacante atrapalhe logins legítimos.
+### Limitações conhecidas
+
+- Os usuários são fixos em variável de ambiente, sem cadastro nem hash de senha.
+- O token não pode ser revogado antes de expirar (remover o usuário de `USUARIOS`
+  bloqueia o acesso após o reinício).
+- O token interno é um segredo único compartilhado, e não mTLS.
+- O rate limit de janela fixa permite rajada na virada do minuto.
+- O teto global de login permite que um atacante atrapalhe logins legítimos.
 
 ---
 
-## 6. LGPD — dados tratados, finalidade e retenção
+## 6. LGPD: dados tratados, finalidade e retenção
 
 | Dado | Finalidade | Onde fica | Retenção |
 |---|---|---|---|
@@ -289,7 +323,7 @@ escolha única: ela varia por caminho.
   vigente). Microsserviços multiplicam esse custo: quatro processos custam mais que um
   monólito. O ganho é escalar e implantar cada parte separadamente.
 - As 750 horas bastam porque os serviços hibernam quando ociosos. Manter os quatro
-  acordados com um *pinger* consumiria a cota em cerca de 8 dias (750 ÷ 4 = 187 h).
+  acordados com um *pinger* consumiria a cota em cerca de 8 dias (750 / 4 = 187 h).
 - **Vetorial próprio em vez de Qdrant ou pgvector:** não exige outra conta nem outro
   serviço pago. Em troca, a busca é exata e O(n) por usuário, e os vetores ocupam a
   mesma memória da fila. Para volumes grandes, trocaríamos por um índice ANN; só o
@@ -346,6 +380,7 @@ A fila dos 100 lotes terminou de ser processada 4,8 s após o último envio.
 Há um **pipeline de CI** (testes + compose de ponta a ponta). A publicação a cada
 commit pode ser feita pelo *auto deploy* do Render, ligado ao repositório. O número
 de workers é ajustável manualmente (`--scale`); não há autoescalonamento.
+
 
 ### Créditos
 
